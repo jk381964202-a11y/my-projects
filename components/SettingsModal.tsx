@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
-import { AppConfig } from '../types';
-import PasswordModal from './PasswordModal';
+import { AppConfig } from '../types.ts';
+import PasswordModal from './PasswordModal.tsx';
 
 interface SettingsModalProps {
   config: AppConfig;

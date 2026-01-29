@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Project, MediaType, ProjectMedia } from '../types';
+import { Project, MediaType, ProjectMedia } from '../types.ts';
 
 interface ProjectEditorProps {
   project?: Project;

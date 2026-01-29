@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { Project, MediaType, ProjectMedia, AppConfig } from './types';
-import Sidebar from './components/Sidebar';
-import ProjectGrid from './components/ProjectGrid';
-import ProjectEditor from './components/ProjectEditor';
-import ProjectViewer from './components/ProjectViewer';
-import SettingsModal from './components/SettingsModal';
-import PasswordModal from './components/PasswordModal';
+import { Project, MediaType, ProjectMedia, AppConfig } from './types.ts';
+import Sidebar from './components/Sidebar.tsx';
+import ProjectGrid from './components/ProjectGrid.tsx';
+import ProjectEditor from './components/ProjectEditor.tsx';
+import ProjectViewer from './components/ProjectViewer.tsx';
+import SettingsModal from './components/SettingsModal.tsx';
+import PasswordModal from './components/PasswordModal.tsx';
 
 const STORAGE_KEY = 'showcase_projects_data';
 const CONFIG_KEY = 'showcase_app_config';

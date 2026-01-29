@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { AppConfig } from '../types';
+import { AppConfig } from '../types.ts';
 
 interface SidebarProps {
   config: AppConfig;
