@@ -1,5 +1,6 @@
 {
-  "name": "数峦云可视化模板库",
-  "description": "数峦云官方可视化模板展示与管理平台，支持多维展示数字孪生与 3D 可视化资产。",
-  "requestFramePermissions": []
+  "name": "Flash UI",
+  "description": "Put Gemini 3 Flash's creativity and coding abilities to the test. Rapidly generate UI, explore variations, and export code.",
+  "requestFramePermissions": [],
+  "prompt": ""
 }

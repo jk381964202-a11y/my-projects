@@ -1,331 +1,581 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createRoot } from 'react-dom/client';
-import { GoogleGenAI } from "@google/genai";
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
 
-// --- 1. 类型与配置 ---
+//Vibe coded by ammaar@google.com
 
-enum MediaType {
-  IMAGE = 'IMAGE',
-  VIDEO = 'VIDEO'
-}
+import { GoogleGenAI } from '@google/genai';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom/client';
 
-interface ProjectMedia {
-  id: string;
-  type: MediaType;
-  url: string;
-  caption?: string;
-}
+import { Artifact, Session, ComponentVariation, LayoutOption } from './types';
+import { INITIAL_PLACEHOLDERS } from './constants';
+import { generateId } from './utils';
 
-interface Project {
-  id: string;
-  title: string;
-  description: string;
-  client: string;
-  category: string;
-  thumbnail: string;
-  media: ProjectMedia[];
-  createdAt: number;
-  backgroundVideoUrl?: string;
-}
+import DottedGlowBackground from './components/DottedGlowBackground';
+import ArtifactCard from './components/ArtifactCard';
+import SideDrawer from './components/SideDrawer';
+import { 
+    ThinkingIcon, 
+    CodeIcon, 
+    SparklesIcon, 
+    ArrowLeftIcon, 
+    ArrowRightIcon, 
+    ArrowUpIcon, 
+    GridIcon 
+} from './components/Icons';
 
-interface AppConfig {
-  title: string;
-  logoText: string;
-  logoUrl?: string;
-  theme: 'light' | 'dark';
-  password?: string;
-}
+function App() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [currentSessionIndex, setCurrentSessionIndex] = useState<number>(-1);
+  const [focusedArtifactIndex, setFocusedArtifactIndex] = useState<number | null>(null);
+  
+  const [inputValue, setInputValue] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [placeholders, setPlaceholders] = useState<string[]>(INITIAL_PLACEHOLDERS);
+  
+  const [drawerState, setDrawerState] = useState<{
+      isOpen: boolean;
+      mode: 'code' | 'variations' | null;
+      title: string;
+      data: any; 
+  }>({ isOpen: false, mode: null, title: '', data: null });
 
-const STORAGE_KEY = 'sl_projects_data_v4';
-const CONFIG_KEY = 'sl_app_config_v4';
-const DEFAULT_PASS = '0701';
+  const [componentVariations, setComponentVariations] = useState<ComponentVariation[]>([]);
 
-// --- 2. UI 组件 ---
-
-const Sidebar = ({ config, categories, activeCategory, onSelectCategory, onAddProject, onHome, onOpenSettings }) => (
-  <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full shrink-0 transition-colors duration-300 print:hidden">
-    <div className="p-6 border-b border-slate-100 dark:border-slate-800">
-      <h1 className="text-xl font-bold text-indigo-600 dark:text-indigo-400 cursor-pointer flex items-center gap-3" onClick={onHome}>
-        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white text-[12px] font-black shadow-lg">
-          {config.logoText}
-        </div>
-        <span className="truncate leading-tight text-lg">{config.title.slice(0, 10)}</span>
-      </h1>
-    </div>
-    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
-      <button onClick={onAddProject} className="w-full mb-8 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-indigo-100">
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"/></svg>
-        新增模板
-      </button>
-      <nav className="space-y-1.5">
-        <h2 className="px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">资产分类</h2>
-        {categories.map(cat => (
-          <button key={cat} onClick={() => onSelectCategory(cat)} 
-            className={`w-full text-left px-4 py-2.5 rounded-xl transition-all ${activeCategory === cat ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-            {cat}
-          </button>
-        ))}
-      </nav>
-    </div>
-    <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-      <button onClick={onOpenSettings} className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm font-bold">
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-        系统设置
-      </button>
-      <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800/50">
-          <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden shrink-0">
-            <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100&h=100" />
-          </div>
-          <div className="overflow-hidden">
-            <p className="text-sm font-bold dark:text-white">管理员</p>
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Pro Admin</p>
-          </div>
-      </div>
-    </div>
-  </aside>
-);
-
-const ProjectGrid = ({ title, projects, onEdit, onView, onDelete }) => (
-  <div className="p-8 max-w-7xl mx-auto">
-    <header className="mb-12">
-      <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">{title}</h1>
-      <p className="text-slate-500 dark:text-slate-400">展示并管理您的数字孪生可视化资产库。</p>
-    </header>
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-      {projects.map(p => (
-        <div key={p.id} className="group bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 overflow-hidden hover:shadow-2xl transition-all duration-500">
-          <div className="aspect-[4/3] relative cursor-pointer overflow-hidden" onClick={() => onView(p.id)}>
-            <img src={p.thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={p.title} />
-            <div className="absolute inset-0 bg-indigo-600/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <span className="bg-white/90 backdrop-blur px-6 py-2 rounded-full text-sm font-bold shadow-xl translate-y-4 group-hover:translate-y-0 transition-transform">预览资产</span>
-            </div>
-          </div>
-          <div className="p-6">
-            <div className="flex justify-between items-start mb-3">
-              <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-2 py-1 rounded">{p.category}</span>
-              <div className="flex gap-2">
-                <button onClick={() => onEdit(p.id)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-                <button onClick={() => onDelete(p.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v2m-3 7h12"/></svg></button>
-              </div>
-            </div>
-            <h3 className="font-bold text-lg text-slate-800 dark:text-white truncate">{p.title}</h3>
-            <p className="text-sm text-slate-500 mt-2 line-clamp-2 leading-relaxed">{p.description}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const PasswordModal = ({ onConfirm, onCancel, title = "权限验证" }) => {
-  const [pass, setPass] = useState('');
-  return (
-    <div className="fixed inset-0 z-[600] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-sm w-full shadow-2xl border border-slate-100 dark:border-slate-800 text-center">
-        <h3 className="text-xl font-bold mb-2 dark:text-white">{title}</h3>
-        <p className="text-sm text-slate-500 mb-6">请输入管理员密码以继续操作。</p>
-        <form onSubmit={(e) => { e.preventDefault(); onConfirm(pass); }}>
-          <input autoFocus type="password" value={pass} onChange={(e) => setPass(e.target.value)}
-            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none dark:text-white mb-6"
-            placeholder="请输入密码..." />
-          <div className="flex gap-3">
-            <button type="button" onClick={onCancel} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">取消</button>
-            <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100">确认</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-const App = () => {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [config, setConfig] = useState<AppConfig>({ title: '数峦云交付库', logoText: 'SL', theme: 'light', password: DEFAULT_PASS });
-  const [view, setView] = useState<'grid' | 'edit' | 'view'>('grid');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState('全部');
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{type: 'edit' | 'add' | 'delete' | 'settings', id: string | null} | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const savedConfig = localStorage.getItem(CONFIG_KEY);
-    if (savedConfig) setConfig(JSON.parse(savedConfig));
-    const savedProjects = localStorage.getItem(STORAGE_KEY);
-    if (savedProjects) {
-      setProjects(JSON.parse(savedProjects));
-    } else {
-      const demo: Project[] = [{
-        id: '1', title: '智慧城市 3D 可视化系统', client: '数峦科技', category: '数字孪生',
-        description: '基于 WebGL 的大尺度城市级别数字孪生平台。集成了交通流分析、热力图监测与实时监控接入。',
-        thumbnail: 'https://images.unsplash.com/photo-1573164713988-8665fc963095?auto=format&fit=crop&q=80&w=800',
-        media: [{ id: 'm1', type: MediaType.IMAGE, url: 'https://images.unsplash.com/photo-1573164713988-8665fc963095?auto=format&fit=crop&q=80&w=1200' }],
-        createdAt: Date.now()
-      }];
-      setProjects(demo);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(demo));
-    }
+      inputRef.current?.focus();
   }, []);
 
+  // Fix for mobile: reset scroll when focusing an item to prevent "overscroll" state
   useEffect(() => {
-    if (config.theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [config.theme]);
+    if (focusedArtifactIndex !== null && window.innerWidth <= 1024) {
+        if (gridScrollRef.current) {
+            gridScrollRef.current.scrollTop = 0;
+        }
+        window.scrollTo(0, 0);
+    }
+  }, [focusedArtifactIndex]);
 
-  const categories = useMemo(() => ['全部', ...Array.from(new Set(projects.map(p => p.category)))], [projects]);
-  const filteredProjects = useMemo(() => activeCategory === '全部' ? projects : projects.filter(p => p.category === activeCategory), [projects, activeCategory]);
+  // Cycle placeholders
+  useEffect(() => {
+      const interval = setInterval(() => {
+          setPlaceholderIndex(prev => (prev + 1) % placeholders.length);
+      }, 3000);
+      return () => clearInterval(interval);
+  }, [placeholders.length]);
 
-  const handlePasswordConfirm = (pass: string) => {
-    if (pass === (config.password || DEFAULT_PASS)) {
-      setIsPasswordModalOpen(false);
-      if (pendingAction?.type === 'add') { setSelectedId(null); setView('edit'); }
-      else if (pendingAction?.type === 'edit') { setSelectedId(pendingAction.id); setView('edit'); }
-      else if (pendingAction?.type === 'settings') { setIsSettingsOpen(true); }
-      else if (pendingAction?.type === 'delete' && pendingAction.id) {
-        const updated = projects.filter(p => p.id !== pendingAction.id);
-        setProjects(updated);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  // Dynamic placeholder generation on load
+  useEffect(() => {
+      const fetchDynamicPlaceholders = async () => {
+          try {
+              const apiKey = process.env.API_KEY;
+              if (!apiKey) return;
+              const ai = new GoogleGenAI({ apiKey });
+              const response = await ai.models.generateContent({
+                  model: 'gemini-3-flash-preview',
+                  contents: { 
+                      role: 'user', 
+                      parts: [{ 
+                          text: 'Generate 20 creative, short, diverse UI component prompts (e.g. "bioluminescent task list"). Return ONLY a raw JSON array of strings. IP SAFEGUARD: Avoid referencing specific famous artists, movies, or brands.' 
+                      }] 
+                  }
+              });
+              const text = response.text || '[]';
+              const jsonMatch = text.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                  const newPlaceholders = JSON.parse(jsonMatch[0]);
+                  if (Array.isArray(newPlaceholders) && newPlaceholders.length > 0) {
+                      const shuffled = newPlaceholders.sort(() => 0.5 - Math.random()).slice(0, 10);
+                      setPlaceholders(prev => [...prev, ...shuffled]);
+                  }
+              }
+          } catch (e) {
+              console.warn("Silently failed to fetch dynamic placeholders", e);
+          }
+      };
+      setTimeout(fetchDynamicPlaceholders, 1000);
+  }, []);
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(event.target.value);
+  };
+
+  const parseJsonStream = async function* (responseStream: AsyncGenerator<{ text: string }>) {
+      let buffer = '';
+      for await (const chunk of responseStream) {
+          const text = chunk.text;
+          if (typeof text !== 'string') continue;
+          buffer += text;
+          let braceCount = 0;
+          let start = buffer.indexOf('{');
+          while (start !== -1) {
+              braceCount = 0;
+              let end = -1;
+              for (let i = start; i < buffer.length; i++) {
+                  if (buffer[i] === '{') braceCount++;
+                  else if (buffer[i] === '}') braceCount--;
+                  if (braceCount === 0 && i > start) {
+                      end = i;
+                      break;
+                  }
+              }
+              if (end !== -1) {
+                  const jsonString = buffer.substring(start, end + 1);
+                  try {
+                      yield JSON.parse(jsonString);
+                      buffer = buffer.substring(end + 1);
+                      start = buffer.indexOf('{');
+                  } catch (e) {
+                      start = buffer.indexOf('{', start + 1);
+                  }
+              } else {
+                  break; 
+              }
+          }
       }
-      setPendingAction(null);
-    } else {
-      alert('密码错误');
+  };
+
+  const handleGenerateVariations = useCallback(async () => {
+    const currentSession = sessions[currentSessionIndex];
+    if (!currentSession || focusedArtifactIndex === null) return;
+    const currentArtifact = currentSession.artifacts[focusedArtifactIndex];
+
+    setIsLoading(true);
+    setComponentVariations([]);
+    setDrawerState({ isOpen: true, mode: 'variations', title: 'Variations', data: currentArtifact.id });
+
+    try {
+        const apiKey = process.env.API_KEY;
+        if (!apiKey) throw new Error("API_KEY is not configured.");
+        const ai = new GoogleGenAI({ apiKey });
+
+        const prompt = `
+You are a master UI/UX designer. Generate 3 RADICAL CONCEPTUAL VARIATIONS of: "${currentSession.prompt}".
+
+**STRICT IP SAFEGUARD:**
+No names of artists. 
+Instead, describe the *Physicality* and *Material Logic* of the UI.
+
+**CREATIVE GUIDANCE (Use these as EXAMPLES of how to describe style, but INVENT YOUR OWN):**
+1. Example: "Asymmetrical Primary Grid" (Heavy black strokes, rectilinear structure, flat primary pigments, high-contrast white space).
+2. Example: "Suspended Kinetic Mobile" (Delicate wire-thin connections, floating organic primary shapes, slow-motion balance, white-void background).
+3. Example: "Grainy Risograph Press" (Overprinted translucent inks, dithered grain textures, monochromatic color depth, raw paper substrate).
+4. Example: "Volumetric Spectral Fluid" (Generative morphing gradients, soft-focus diffusion, bioluminescent light sources, spectral chromatic aberration).
+
+**YOUR TASK:**
+For EACH variation:
+- Invent a unique design persona name based on a NEW physical metaphor.
+- Rewrite the prompt to fully adopt that metaphor's visual language.
+- Generate high-fidelity HTML/CSS.
+
+Required JSON Output Format (stream ONE object per line):
+\`{ "name": "Persona Name", "html": "..." }\`
+        `.trim();
+
+        const responseStream = await ai.models.generateContentStream({
+            model: 'gemini-3-flash-preview',
+             contents: [{ parts: [{ text: prompt }], role: 'user' }],
+             config: { temperature: 1.2 }
+        });
+
+        for await (const variation of parseJsonStream(responseStream)) {
+            if (variation.name && variation.html) {
+                setComponentVariations(prev => [...prev, variation]);
+            }
+        }
+    } catch (e: any) {
+        console.error("Error generating variations:", e);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [sessions, currentSessionIndex, focusedArtifactIndex]);
+
+  const applyVariation = (html: string) => {
+      if (focusedArtifactIndex === null) return;
+      setSessions(prev => prev.map((sess, i) => 
+          i === currentSessionIndex ? {
+              ...sess,
+              artifacts: sess.artifacts.map((art, j) => 
+                j === focusedArtifactIndex ? { ...art, html, status: 'complete' } : art
+              )
+          } : sess
+      ));
+      setDrawerState(s => ({ ...s, isOpen: false }));
+  };
+
+  const handleShowCode = () => {
+      const currentSession = sessions[currentSessionIndex];
+      if (currentSession && focusedArtifactIndex !== null) {
+          const artifact = currentSession.artifacts[focusedArtifactIndex];
+          setDrawerState({ isOpen: true, mode: 'code', title: 'Source Code', data: artifact.html });
+      }
+  };
+
+  const handleSendMessage = useCallback(async (manualPrompt?: string) => {
+    const promptToUse = manualPrompt || inputValue;
+    const trimmedInput = promptToUse.trim();
+    
+    if (!trimmedInput || isLoading) return;
+    if (!manualPrompt) setInputValue('');
+
+    setIsLoading(true);
+    const baseTime = Date.now();
+    const sessionId = generateId();
+
+    const placeholderArtifacts: Artifact[] = Array(3).fill(null).map((_, i) => ({
+        id: `${sessionId}_${i}`,
+        styleName: 'Designing...',
+        html: '',
+        status: 'streaming',
+    }));
+
+    const newSession: Session = {
+        id: sessionId,
+        prompt: trimmedInput,
+        timestamp: baseTime,
+        artifacts: placeholderArtifacts
+    };
+
+    setSessions(prev => [...prev, newSession]);
+    setCurrentSessionIndex(sessions.length); 
+    setFocusedArtifactIndex(null); 
+
+    try {
+        const apiKey = process.env.API_KEY;
+        if (!apiKey) throw new Error("API_KEY is not configured.");
+        const ai = new GoogleGenAI({ apiKey });
+
+        const stylePrompt = `
+Generate 3 distinct, highly evocative design directions for: "${trimmedInput}".
+
+**STRICT IP SAFEGUARD:**
+Never use artist or brand names. Use physical and material metaphors.
+
+**CREATIVE EXAMPLES (Do not simply copy these, use them as a guide for tone):**
+- Example A: "Asymmetrical Rectilinear Blockwork" (Grid-heavy, primary pigments, thick structural strokes, Bauhaus-functionalism vibe).
+- Example B: "Grainy Risograph Layering" (Tactile paper texture, overprinted translucent inks, dithered gradients).
+- Example C: "Kinetic Wireframe Suspension" (Floating silhouettes, thin balancing lines, organic primary shapes).
+- Example D: "Spectral Prismatic Diffusion" (Glassmorphism, caustic refraction, soft-focus morphing gradients).
+
+**GOAL:**
+Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.g. ["Tactile Risograph Press", "Kinetic Silhouette Balance", "Primary Pigment Gridwork"]).
+        `.trim();
+
+        const styleResponse = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: { role: 'user', parts: [{ text: stylePrompt }] }
+        });
+
+        let generatedStyles: string[] = [];
+        const styleText = styleResponse.text || '[]';
+        const jsonMatch = styleText.match(/\[[\s\S]*\]/);
+        
+        if (jsonMatch) {
+            try {
+                generatedStyles = JSON.parse(jsonMatch[0]);
+            } catch (e) {
+                console.warn("Failed to parse styles, using fallbacks");
+            }
+        }
+
+        if (!generatedStyles || generatedStyles.length < 3) {
+            generatedStyles = [
+                "Primary Pigment Gridwork",
+                "Tactile Risograph Layering",
+                "Kinetic Silhouette Balance"
+            ];
+        }
+        
+        generatedStyles = generatedStyles.slice(0, 3);
+
+        setSessions(prev => prev.map(s => {
+            if (s.id !== sessionId) return s;
+            return {
+                ...s,
+                artifacts: s.artifacts.map((art, i) => ({
+                    ...art,
+                    styleName: generatedStyles[i]
+                }))
+            };
+        }));
+
+        const generateArtifact = async (artifact: Artifact, styleInstruction: string) => {
+            try {
+                const prompt = `
+You are Flash UI. Create a stunning, high-fidelity UI component for: "${trimmedInput}".
+
+**CONCEPTUAL DIRECTION: ${styleInstruction}**
+
+**VISUAL EXECUTION RULES:**
+1. **Materiality**: Use the specified metaphor to drive every CSS choice. (e.g. if Risograph, use \`feTurbulence\` for grain and \`mix-blend-mode: multiply\` for ink layering).
+2. **Typography**: Use high-quality web fonts. Pair a bold sans-serif with a refined monospace for data.
+3. **Motion**: Include subtle, high-performance CSS/JS animations (hover transitions, entry reveals).
+4. **IP SAFEGUARD**: No artist names or trademarks. 
+5. **Layout**: Be bold with negative space and hierarchy. Avoid generic cards.
+
+Return ONLY RAW HTML. No markdown fences.
+          `.trim();
+          
+                const responseStream = await ai.models.generateContentStream({
+                    model: 'gemini-3-flash-preview',
+                    contents: [{ parts: [{ text: prompt }], role: "user" }],
+                });
+
+                let accumulatedHtml = '';
+                for await (const chunk of responseStream) {
+                    const text = chunk.text;
+                    if (typeof text === 'string') {
+                        accumulatedHtml += text;
+                        setSessions(prev => prev.map(sess => 
+                            sess.id === sessionId ? {
+                                ...sess,
+                                artifacts: sess.artifacts.map(art => 
+                                    art.id === artifact.id ? { ...art, html: accumulatedHtml } : art
+                                )
+                            } : sess
+                        ));
+                    }
+                }
+                
+                let finalHtml = accumulatedHtml.trim();
+                if (finalHtml.startsWith('```html')) finalHtml = finalHtml.substring(7).trimStart();
+                if (finalHtml.startsWith('```')) finalHtml = finalHtml.substring(3).trimStart();
+                if (finalHtml.endsWith('```')) finalHtml = finalHtml.substring(0, finalHtml.length - 3).trimEnd();
+
+                setSessions(prev => prev.map(sess => 
+                    sess.id === sessionId ? {
+                        ...sess,
+                        artifacts: sess.artifacts.map(art => 
+                            art.id === artifact.id ? { ...art, html: finalHtml, status: finalHtml ? 'complete' : 'error' } : art
+                        )
+                    } : sess
+                ));
+
+            } catch (e: any) {
+                console.error('Error generating artifact:', e);
+                setSessions(prev => prev.map(sess => 
+                    sess.id === sessionId ? {
+                        ...sess,
+                        artifacts: sess.artifacts.map(art => 
+                            art.id === artifact.id ? { ...art, html: `<div style="color: #ff6b6b; padding: 20px;">Error: ${e.message}</div>`, status: 'error' } : art
+                        )
+                    } : sess
+                ));
+            }
+        };
+
+        await Promise.all(placeholderArtifacts.map((art, i) => generateArtifact(art, generatedStyles[i])));
+
+    } catch (e) {
+        console.error("Fatal error in generation process", e);
+    } finally {
+        setIsLoading(false);
+        setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [inputValue, isLoading, sessions.length]);
+
+  const handleSurpriseMe = () => {
+      const currentPrompt = placeholders[placeholderIndex];
+      setInputValue(currentPrompt);
+      handleSendMessage(currentPrompt);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && !isLoading) {
+      event.preventDefault();
+      handleSendMessage();
+    } else if (event.key === 'Tab' && !inputValue && !isLoading) {
+        event.preventDefault();
+        setInputValue(placeholders[placeholderIndex]);
     }
   };
 
-  const currentProject = useMemo(() => projects.find(p => p.id === selectedId), [projects, selectedId]);
+  const nextItem = useCallback(() => {
+      if (focusedArtifactIndex !== null) {
+          if (focusedArtifactIndex < 2) setFocusedArtifactIndex(focusedArtifactIndex + 1);
+      } else {
+          if (currentSessionIndex < sessions.length - 1) setCurrentSessionIndex(currentSessionIndex + 1);
+      }
+  }, [currentSessionIndex, sessions.length, focusedArtifactIndex]);
+
+  const prevItem = useCallback(() => {
+      if (focusedArtifactIndex !== null) {
+          if (focusedArtifactIndex > 0) setFocusedArtifactIndex(focusedArtifactIndex - 1);
+      } else {
+           if (currentSessionIndex > 0) setCurrentSessionIndex(currentSessionIndex - 1);
+      }
+  }, [currentSessionIndex, focusedArtifactIndex]);
+
+  const isLoadingDrawer = isLoading && drawerState.mode === 'variations' && componentVariations.length === 0;
+
+  const hasStarted = sessions.length > 0 || isLoading;
+  const currentSession = sessions[currentSessionIndex];
+
+  let canGoBack = false;
+  let canGoForward = false;
+
+  if (hasStarted) {
+      if (focusedArtifactIndex !== null) {
+          canGoBack = focusedArtifactIndex > 0;
+          canGoForward = focusedArtifactIndex < (currentSession?.artifacts.length || 0) - 1;
+      } else {
+          canGoBack = currentSessionIndex > 0;
+          canGoForward = currentSessionIndex < sessions.length - 1;
+      }
+  }
 
   return (
-    <div className={`flex h-screen overflow-hidden ${config.theme === 'dark' ? 'dark' : ''}`}>
-      <Sidebar 
-        config={config} categories={categories} activeCategory={activeCategory} 
-        onSelectCategory={setActiveCategory} onHome={() => setView('grid')}
-        onAddProject={() => { setPendingAction({type: 'add', id: null}); setIsPasswordModalOpen(true); }}
-        onOpenSettings={() => { setPendingAction({type: 'settings', id: null}); setIsPasswordModalOpen(true); }}
-      />
-      
-      <main className="flex-1 bg-slate-50 dark:bg-slate-950 overflow-y-auto relative custom-scrollbar">
-        {view === 'grid' && (
-          <ProjectGrid title={config.title} projects={filteredProjects} 
-            onView={id => { setSelectedId(id); setView('view'); }} 
-            onEdit={id => { setPendingAction({type: 'edit', id}); setIsPasswordModalOpen(true); }}
-            onDelete={id => { setPendingAction({type: 'delete', id}); setIsPasswordModalOpen(true); }}
-          />
-        )}
+    <>
+        <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted ? 'hide-on-mobile' : ''}`}>
+            created by @ammaar
+        </a>
 
-        {view === 'view' && currentProject && (
-          <div className="p-8 max-w-6xl mx-auto pb-32 animate-in fade-in duration-500">
-             <button onClick={() => setView('grid')} className="mb-10 flex items-center gap-2 text-indigo-600 font-bold hover:-translate-x-1 transition-transform print-hidden">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"/></svg>
-                返回资产库
-             </button>
-             <header className="mb-16">
-               <span className="text-xs font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">{currentProject.category}</span>
-               <h1 className="text-5xl font-black mt-4 mb-6 dark:text-white leading-tight">{currentProject.title}</h1>
-               <p className="text-xl text-slate-500 dark:text-slate-400 leading-relaxed max-w-3xl font-medium">{currentProject.description}</p>
-             </header>
-             <div className="grid gap-16">
-                {currentProject.media.map(m => (
-                  <div key={m.id} className="rounded-[40px] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-2">
-                    {m.type === MediaType.VIDEO ? (
-                      <video controls src={m.url} className="w-full rounded-[34px]" />
-                    ) : (
-                      <img src={m.url} className="w-full h-auto rounded-[34px]" alt={currentProject.title} />
-                    )}
-                  </div>
-                ))}
-             </div>
-          </div>
-        )}
+        <SideDrawer 
+            isOpen={drawerState.isOpen} 
+            onClose={() => setDrawerState(s => ({...s, isOpen: false}))} 
+            title={drawerState.title}
+        >
+            {isLoadingDrawer && (
+                 <div className="loading-state">
+                     <ThinkingIcon /> 
+                     Designing variations...
+                 </div>
+            )}
 
-        {view === 'edit' && (
-          <div className="p-12 max-w-4xl mx-auto mt-8 bg-white dark:bg-slate-900 rounded-[40px] shadow-2xl border border-slate-100 dark:border-slate-800 mb-20 animate-in slide-in-from-bottom-8 duration-500">
-            <h2 className="text-3xl font-black mb-10 dark:text-white">{selectedId ? '编辑交付项目' : '创建新模板'}</h2>
-            <div className="space-y-8">
-              <div>
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">项目标题</label>
-                <input id="in-title" className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white outline-none focus:border-indigo-500" defaultValue={currentProject?.title} />
-              </div>
-              <div className="grid grid-cols-2 gap-8">
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">分类</label>
-                  <input id="in-cat" className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white" defaultValue={currentProject?.category || '数字孪生'} />
+            {drawerState.mode === 'code' && (
+                <pre className="code-block"><code>{drawerState.data}</code></pre>
+            )}
+            
+            {drawerState.mode === 'variations' && (
+                <div className="sexy-grid">
+                    {componentVariations.map((v, i) => (
+                         <div key={i} className="sexy-card" onClick={() => applyVariation(v.html)}>
+                             <div className="sexy-preview">
+                                 <iframe srcDoc={v.html} title={v.name} sandbox="allow-scripts allow-same-origin" />
+                             </div>
+                             <div className="sexy-label">{v.name}</div>
+                         </div>
+                    ))}
                 </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">主图 URL</label>
-                  <input id="in-thumb" className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white" defaultValue={currentProject?.thumbnail} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">详细介绍</label>
-                <textarea id="in-desc" rows={6} className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white" defaultValue={currentProject?.description} />
-              </div>
-              <div className="flex gap-4 pt-8 border-t border-slate-50">
-                <button onClick={() => setView('grid')} className="px-8 py-4 font-bold text-slate-400 hover:text-slate-600">取消</button>
-                <button onClick={() => {
-                  const titleInput = document.getElementById('in-title') as HTMLInputElement;
-                  const categoryInput = document.getElementById('in-cat') as HTMLInputElement;
-                  const thumbnailInput = document.getElementById('in-thumb') as HTMLInputElement;
-                  const descriptionInput = document.getElementById('in-desc') as HTMLTextAreaElement;
-                  
-                  if(!titleInput.value || !thumbnailInput.value) return alert('信息不完整');
-                  const updated: Project = {
-                    id: selectedId || Date.now().toString(),
-                    title: titleInput.value,
-                    category: categoryInput.value,
-                    thumbnail: thumbnailInput.value,
-                    description: descriptionInput.value,
-                    client: '数峦科技', createdAt: Date.now(),
-                    media: currentProject?.media || [{id: 'm1', type: MediaType.IMAGE, url: thumbnailInput.value}]
-                  };
-                  const all = projects.some(p => p.id === updated.id) ? projects.map(p => p.id === updated.id ? updated : p) : [updated, ...projects];
-                  setProjects(all);
-                  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-                  setView('grid');
-                }} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl active:scale-95">保存并发布资产</button>
-              </div>
+            )}
+        </SideDrawer>
+
+        <div className="immersive-app">
+            <DottedGlowBackground 
+                gap={24} 
+                radius={1.5} 
+                color="rgba(255, 255, 255, 0.02)" 
+                glowColor="rgba(255, 255, 255, 0.15)" 
+                speedScale={0.5} 
+            />
+
+            <div className={`stage-container ${focusedArtifactIndex !== null ? 'mode-focus' : 'mode-split'}`}>
+                 <div className={`empty-state ${hasStarted ? 'fade-out' : ''}`}>
+                     <div className="empty-content">
+                         <h1>Flash UI</h1>
+                         <p>Creative UI generation in a flash</p>
+                         <button className="surprise-button" onClick={handleSurpriseMe} disabled={isLoading}>
+                             <SparklesIcon /> Surprise Me
+                         </button>
+                     </div>
+                 </div>
+
+                {sessions.map((session, sIndex) => {
+                    let positionClass = 'hidden';
+                    if (sIndex === currentSessionIndex) positionClass = 'active-session';
+                    else if (sIndex < currentSessionIndex) positionClass = 'past-session';
+                    else if (sIndex > currentSessionIndex) positionClass = 'future-session';
+                    
+                    return (
+                        <div key={session.id} className={`session-group ${positionClass}`}>
+                            <div className="artifact-grid" ref={sIndex === currentSessionIndex ? gridScrollRef : null}>
+                                {session.artifacts.map((artifact, aIndex) => {
+                                    const isFocused = focusedArtifactIndex === aIndex;
+                                    
+                                    return (
+                                        <ArtifactCard 
+                                            key={artifact.id}
+                                            artifact={artifact}
+                                            isFocused={isFocused}
+                                            onClick={() => setFocusedArtifactIndex(aIndex)}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
-          </div>
-        )}
-      </main>
 
-      {isPasswordModalOpen && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={() => setIsPasswordModalOpen(false)} />}
-      
-      {isSettingsOpen && (
-        <div className="fixed inset-0 z-[500] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
-           <div className="bg-white dark:bg-slate-900 rounded-[40px] p-10 max-w-md w-full shadow-2xl">
-              <h2 className="text-2xl font-black mb-8 dark:text-white">全局设置</h2>
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">站点大标题</label>
-                  <input id="set-title" className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl dark:bg-slate-800 dark:border-slate-700 dark:text-white" defaultValue={config.title} />
+             {canGoBack && (
+                <button className="nav-handle left" onClick={prevItem} aria-label="Previous">
+                    <ArrowLeftIcon />
+                </button>
+             )}
+             {canGoForward && (
+                <button className="nav-handle right" onClick={nextItem} aria-label="Next">
+                    <ArrowRightIcon />
+                </button>
+             )}
+
+            <div className={`action-bar ${focusedArtifactIndex !== null ? 'visible' : ''}`}>
+                 <div className="active-prompt-label">
+                    {currentSession?.prompt}
+                 </div>
+                 <div className="action-buttons">
+                    <button onClick={() => setFocusedArtifactIndex(null)}>
+                        <GridIcon /> Grid View
+                    </button>
+                    <button onClick={handleGenerateVariations} disabled={isLoading}>
+                        <SparklesIcon /> Variations
+                    </button>
+                    <button onClick={handleShowCode}>
+                        <CodeIcon /> Source
+                    </button>
+                 </div>
+            </div>
+
+            <div className="floating-input-container">
+                <div className={`input-wrapper ${isLoading ? 'loading' : ''}`}>
+                    {(!inputValue && !isLoading) && (
+                        <div className="animated-placeholder" key={placeholderIndex}>
+                            <span className="placeholder-text">{placeholders[placeholderIndex]}</span>
+                            <span className="tab-hint">Tab</span>
+                        </div>
+                    )}
+                    {!isLoading ? (
+                        <input 
+                            ref={inputRef}
+                            type="text" 
+                            value={inputValue} 
+                            onChange={handleInputChange} 
+                            onKeyDown={handleKeyDown} 
+                            disabled={isLoading} 
+                        />
+                    ) : (
+                        <div className="input-generating-label">
+                            <span className="generating-prompt-text">{currentSession?.prompt}</span>
+                            <ThinkingIcon />
+                        </div>
+                    )}
+                    <button className="send-button" onClick={() => handleSendMessage()} disabled={isLoading || !inputValue.trim()}>
+                        <ArrowUpIcon />
+                    </button>
                 </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">管理密码</label>
-                  <input id="set-pass" type="password" className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl dark:bg-slate-800 dark:border-slate-700 dark:text-white" defaultValue={config.password} />
-                </div>
-                <div className="flex gap-4 pt-6">
-                   <button onClick={() => setIsSettingsOpen(false)} className="px-6 py-3 text-slate-400 font-bold">取消</button>
-                   <button onClick={() => {
-                     const titleInput = document.getElementById('set-title') as HTMLInputElement;
-                     const passInput = document.getElementById('set-pass') as HTMLInputElement;
-                     const newConfig = { ...config, title: titleInput.value, password: passInput.value };
-                     setConfig(newConfig);
-                     localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
-                     setIsSettingsOpen(false);
-                   }} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg">保存</button>
-                </div>
-              </div>
-           </div>
+            </div>
         </div>
-      )}
-    </div>
+    </>
   );
-};
+}
 
-// --- 5. 渲染入口 ---
-
-const rootEl = document.getElementById('root');
-if (rootEl) {
-  const root = createRoot(rootEl);
-  root.render(<App />);
+const rootElement = document.getElementById('root');
+if (rootElement) {
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(<React.StrictMode><App /></React.StrictMode>);
 }

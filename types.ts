@@ -1,39 +1,21 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
 
-export enum MediaType {
-  IMAGE = 'IMAGE',
-  VIDEO = 'VIDEO'
-}
-
-export interface ProjectMedia {
+export interface Artifact {
   id: string;
-  type: MediaType;
-  url: string;
-  caption?: string;
+  styleName: string;
+  html: string;
+  status: 'streaming' | 'complete' | 'error';
 }
 
-export interface Project {
-  id: string;
-  title: string;
-  description: string;
-  client: string;
-  category: string;
-  thumbnail: string;
-  media: ProjectMedia[];
-  createdAt: number;
-  backgroundVideoUrl?: string; // 项目详情页背景视频
+export interface Session {
+    id: string;
+    prompt: string;
+    timestamp: number;
+    artifacts: Artifact[];
 }
 
-export interface AppConfig {
-  title: string;
-  logoText: string;
-  logoUrl?: string;
-  theme: 'light' | 'dark';
-  password?: string; // Access password for editing
-}
-
-export interface AppState {
-  projects: Project[];
-  isEditing: boolean;
-  selectedProjectId: string | null;
-  config: AppConfig;
-}
+export interface ComponentVariation { name: string; html: string; }
+export interface LayoutOption { name: string; css: string; previewHtml: string; }
