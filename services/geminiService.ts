@@ -1,7 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Always use process.env.API_KEY directly as required by guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateProjectCopy = async (title: string, category: string, keywords: string): Promise<string> => {
   try {
@@ -15,6 +16,7 @@ export const generateProjectCopy = async (title: string, category: string, keywo
         topP: 0.95,
       }
     });
+    // response.text is a property, not a method
     return response.text || "未能生成描述，请手动编写。";
   } catch (error) {
     console.error("Gemini Error:", error);
@@ -36,6 +38,7 @@ export const analyzeDesign = async (imageData: string, prompt: string): Promise<
       contents: { parts: [imagePart, { text: prompt + " 请用中文回答。" }] },
     });
     
+    // response.text is a property, not a method
     return response.text || "暂无分析结果。";
   } catch (error) {
     console.error("Gemini Vision Error:", error);
